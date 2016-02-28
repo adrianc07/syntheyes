@@ -1,0 +1,593 @@
+//SIZZLEX .ms Max Script v9 b0.83
+@[
+
+// (c)2011-2013 Adrian Costea www.oddworks.ro
+// (c)2008-2009 Mihai Pocorschi III www.pocorschi.com
+// Based on Russel Andersson's 3ds Max exporter.
+//
+// Maxscript export script.
+currobj = Scene.activeObj
+cam = Scene.activeObj.cam
+// Set the following value to your version of MAX (5, 6)
+MaxVersion = 6
+trackerSize = 0.001	// relative to world size
+bias = Scene.startFrame	// frame bias: starting max frame # (frame 0 in SE)
+
+if(1)
+    dlg = NewDialog("3dsMax exporter options")
+    dlg.StartRadio("MaxVersion", "3dsmax Version")
+    dlg.Radio("max_5", "V5 or earlier", (MaxVersion <= 5))
+    dlg.Radio("max_6", "V6 or later", (MaxVersion >= 6))
+    dlg.Check("bias", "Starting at Frame 1", bias)
+    dlg.String("trackerPrefix", "Camera and trackers prefix", "prefix")
+	dlg.Check("imgPlane", "Create ImagePlane", 1)
+	dlg.String("imgdist", "at distance in " Scene.exportUnits "", 500)
+	dlg.Check("imgPlaneBGBool", "Use map for ImagePlane", 0)
+	dlg.OpenFile("imgPlaneBG", "ImagePlane Map", "ifl")
+	dlg.Check("layers", "Create layer", 1)
+	dlg.Check("lockTrans", "Lock Transforms", 1)    
+    dlg.Check("bak", "Set background img seq. ", 0)
+    dlg.Float("trackerSize", "Relative tracker size", 0.0001, trackerSize, 0.01)
+    dlg.String("obcol", "set color (R G B)", "8 8 136")
+    
+    // UI function. Get previously stored proxy path. This is stored as a scene camera attribute
+    Scene.activeObj = currobj
+    if (isNull(cam.proxyPath) == 1 || cam.proxyPath == "unknown")
+        Message ("No proxy path on camera.")
+        detproxy = currobj.shot.nm
+    else
+        Message ("Proxy path found!")
+        detproxy = cam.proxyPath
+        dlg.Button("GetProxy", "Get proxy", "Get")
+        dlg.String("storedproxy", "Proxy", "proxy_path")
+    end  
+    dlg.Show()
+
+    storedproxy = dlg.storedproxy
+    MaxVersion = (dlg.max_6 ? 6 : 5);
+    bias = dlg.bias
+    trackerSize = dlg.trackerSize
+    trackerPrefix = dlg.trackerPrefix
+    imgPlane = dlg.imgPlane
+	imgPlaneBGBool = dlg.imgPlaneBGBool
+	imgPlaneBG = dlg.imgPlaneBG
+    layers = dlg.layers
+    lockTrans = dlg.lockTrans
+    bkg = dlg.bak
+    imgplDist = dlg.imgdist
+    obcolor = dlg.obcol
+end
+
+axisMode = 0		// ALWAYS Z Up
+maincam = Scene.activeObj.cam
+mainshot = maincam.shot
+Header(maincam)
+
+//Test for ImagePlane class
+"try (\n"
+"test = imageplane()\n"
+"delete test\n"
+") catch (messageBox \"Warning! Crash detected! Reason: No ImagePlane class found.\")\n"
+
+"DisableSceneRedraw()\n"
+
+// Max function. Used in attempt to read local username and store it in camera user props.
+"--getting machine user name--\n"
+"execByUser = 0 \n"
+"registry.openKey HKEY_CURRENT_USER \"Volatile Environment\" accessRights:#readOnly key:&key1\n"
+"registry.queryValue key1 \"USERNAME\" type:&type value:&execByUser\n"
+
+// Create the scene layer
+
+if (layers == 1)
+	createTrackingLayer()
+end
+
+// Spawn scene controller
+	"--create scene controller--\n"
+	"ShotDummy = point name:\"" trackerPrefix "_SceneControlDummy\" pos:[0,0,0] \n"
+	"ShotDummy.box = on \nShotDummy.cross = on \nShotDummy.axistripod = on \nShotDummy.centermarker = on\nShotDummy.drawontop = on \n"
+	"ShotDummy.size = 100 \n"
+	"ShotDummy.wireColor = color 0 255 0\n"
+	"--end creating scene controller--\n"
+
+// Make Camera, Lights and Objects
+
+// Deprecated method -
+//for (ob in Obj)
+//    if (ob.cam == maincam)
+//	OutObj(ob)
+//    end
+//end
+
+if (mainshot.stereoType > 0)
+    for (ob in mainshot.left.obj)
+	OutObj(ob)
+	CamVars()
+    end
+    for (ob in mainshot.right.obj)
+	OutObj(ob)
+	CamVars()
+    end
+else
+    for (ob in Obj)
+	if (ob.cam == maincam)
+	    OutObj(ob)
+	    CamVars()
+	end
+    end
+end
+
+for (lite in Lite)
+    OutLite(lite)
+end
+
+for (msh in Mesh)
+    OutMesh(msh)
+end
+
+// Parent to controller
+
+ParentAll()
+
+
+// Lock Transforms
+
+if (lockTrans == 1)
+	lockAllTransforms()
+end
+
+"setTransformLockFlags ShotDummy #none \n"
+
+// Create Image Plane
+
+if (imgPlane == 1)
+	createImagePlane(imgPlaneBGBool)
+end
+// Scene redraw
+"EnableSceneRedraw()\n"
+"completeRedraw()\n"
+
+
+// Update imageplane and do final touches
+
+"--final touches--\n"
+if (imgPlane == 1)
+	"select $ImagePlane*\n"
+	"max modify mode\n"
+	"modPanel.addModToSelection (Turn_to_Poly())\n"
+	"$.distance = " imgplDist " \n"
+	"$.renderable = false\n"
+	"clearSelection()\n"
+end
+
+// all below disabled. need to check lockAllTransforms Function
+// and check if it is a good ideea to set all objects to non renderable
+//"select$*\n"
+//"$.renderable = off\n"
+//"setTransformLockFlags $ #all\n" 
+//"clearSelection()\n"
+
+if (layers == 1)
+	"DefaultLayer = LayerManager.getLayer 0\n"
+	"DefaultLayer.current = true\n"
+end
+"max zoomext sel all\n"
+"--done importing. Have a nice day :D--\n"
+")"
+
+return		// exit
+
+// Functions
+
+// Get scene params and update UI.
+
+function GetProxy()
+	dlg.storedproxy = detproxy
+	dlg.imgPlaneBG = detproxy
+	dlg.imgPlaneBGBool = 1
+end
+
+// Output scene-wide parameters, and shot background
+
+function Header(ob)
+    shot = ob.shot
+
+    "-- MaxScript Exporter: " Scene.sourceFile "\n"
+    DateTime("-- Exported %a, %b %d, %Y %H:%M:%S %p\n")
+    "-- Intended for 3ds max Version "
+	    (MaxVersion>=6 ? "6 or later" : MaxVersion) "\n"
+
+// Very important: frameRate must be set BEFORE the parent, so that
+// 3ds max interprets the frame range correctly.
+    "frameRate = " shot.rate "\n"
+    "(\n"		// make it all one big block
+
+    if (MaxVersion >= 6)
+	if (Scene.exportUnits == "in")
+	    unflg = "#Inches"
+	elseif (Scene.exportUnits == "ft")
+	    unflg = "#Feet"
+	elseif (Scene.exportUnits == "yd")
+	    MessageBox("3ds max does not support yards, using meters instead")
+	    unflg = "#Meters"
+	elseif (Scene.exportUnits == "mi")
+	    unflg = "#Miles"
+	elseif (Scene.exportUnits == "mm")
+	    unflg = "#Millimeters"
+	elseif (Scene.exportUnits == "cm")
+	    unflg = "#Centimeters"
+	elseif (Scene.exportUnits == "m")
+	    unflg = "#Meters"
+	elseif (Scene.exportUnits == "km")
+	    unflg = "#Kilometers"
+	end
+	"units.SystemType = " unflg "\n"
+    end
+
+    firstFrame = shot.start
+    lastFrame = shot.stop
+    "animationRange = interval " firstFrame+bias "f " lastFrame+bias "f\n"
+
+    if (MaxVersion < 6)
+	"setUseDraftRenderer true\n"
+    end
+    "renderWidth = " shot.rawWidth "\n"
+    "renderHeight = " shot.rawHeight "\n"
+    "renderPixelAspect = " shot.aspect*shot.rawHeight/shot.rawWidth "\n"
+    "setRendApertureWidth " shot.backPlateWidth "\n"
+
+    if (MaxVersion < 6)
+	"setUseDraftRenderer false\n"
+	"renderWidth = " shot.rawWidth "\n"
+	"renderHeight = " shot.rawHeight "\n"
+	"renderPixelAspect = " shot.aspect*shot.rawHeight/shot.rawWidth "\n"
+	"setRendApertureWidth " shot.backPlateWidth "\n"
+    end
+
+    shnm = fix_slashes(shot.nm)
+    if (substr(shnm, 1, 2) == "//")
+	shnm = ("/" shnm)
+    end
+
+// Set background image
+
+    if (bkg != 0)
+        "backgroundImageFileName = \"\\" imgPlaneBG "\"\n"
+    end
+
+    "setBkgFrameRange [" firstFrame+bias ", " lastFrame+bias ", 1]\n"
+    "setBkgImageAspect #output\n"
+    "setBkgImageAnimate true\n"
+    "realTimePlayback = false\n"
+end
+
+// Output the information for a camera or moving object
+
+function OutObj(ob)
+    onm = ob.nm
+    basecam = ob.cam
+    wsize = ob.worldSize
+    pathChange = DoesTransformChange(ob)
+    fixedLens = IsLensFixed(basecam)
+    if (ob.isCamera)
+		camnam = basecam.nm
+    end
+
+// Set up the base object in MAX
+
+    frame = firstFrame
+    "set animate off\n"
+    if (!ob.isCamera)
+	"newobj = Box widthsegs:1 heightsegs:1 lengthsegs:1"
+	" name:\"" onm "\" length:" wsize/20 " width:" wsize/20
+	" height:" wsize/20 
+	" isSelected:on \n"
+	"newobj.transform = matrix3" OutMatrix(ob.trans) "\n"
+    else
+	"newobj = Freecamera name:\"" trackerPrefix "_" onm "_" shot.start "to" shot.stop"\" fov:" basecam.fov 
+		" targetDistance:160 nearclip:1"
+		" farclip:1000 nearrange:0 farrange:1000" " isSelected:on\n"
+	"newobj.transform = matrix3" OutMatrix(ob.trans) "\n"
+//	"viewport.setCamera $" onm "\n"
+	"viewport.setCamera newobj\n"
+    end
+    "newobj.showTrajectory = on\n"
+
+// Whale out the output trajectory.
+
+    if (pathChange || ob.isCamera && !fixedLens)
+	"set animate on\n"
+	for (frame = firstFrame; frame <= lastFrame; frame++)
+//	    "sliderTime = " frame+bias "f\n"
+	    "at time " frame+bias "f (\n"
+	    if (pathChange)
+		"newobj.transform = matrix3" OutMatrix(ob.trans) "\n"
+	    end
+
+	    if (ob.isCamera && !fixedLens)
+		"newobj.fov = " basecam.fov "\n"
+	    end
+	    ")\n"
+	end
+	"set animate off\n"
+    end
+    "sliderTime = " firstFrame+bias "f\n"
+
+// The trackers
+
+    frame = firstFrame
+    for (tk in ob.trk)
+	if (!tk.isSolved || !tk.isExported)
+	    continue
+	end
+
+// Special handling for individual trackers
+
+	if (tk.isSolved == 2)
+	    frame = firstFrame
+	    printf("newtk = Point name:\"%s_%s\" pos:[%lf,%lf,%lf] size:%lf "
+		"axistripod:off centermarker:on isSelected:on $.wirecolor = color " obcolor "\n",
+		trackerPrefix, tk.nm, tk.wx, tk.wy, tk.wz, trackerSize*wsize)
+	    "set animate on\n"
+	    for (frame = firstFrame; frame <= lastFrame; frame++)
+		"at time " frame+bias "f (\n"
+		    printf("newtk.pos = [%lf,%lf,%lf]\n",
+			tk.wx, tk.wy, tk.wz)
+		")\n"
+	    end
+	    "set animate off\n"
+	    "sliderTime = " firstFrame+bias "f\n"
+	    continue
+	end
+
+// Always output wvec, not ovec. Are same if isCamera. If isObject,
+//	need to output world anyway, so that when parent is changed,
+//	the right spot results.
+// Must output ovec for far points, however, so that the position_list
+//	stuff works right.
+
+	if (tk.isFar)
+	    printf("Point name:\"%s_%s\" pos:[%lf,%lf,%lf] size:%lf "
+		"axistripod:off centermarker:on isSelected:on $.wirecolor = color " obcolor "\n",
+		trackerPrefix, tk.nm, tk.ovec.x, tk.ovec.y, tk.ovec.z, trackerSize*wsize)
+	else
+	    printf("Point name:\"%s_%s\" pos:[%lf,%lf,%lf] size:%lf "
+		"axistripod:off centermarker:on isSelected:on $.wirecolor = color " obcolor "\n",
+		trackerPrefix, tk.nm, tk.wvec.x, tk.wvec.y, tk.wvec.z, trackerSize*wsize)
+	end
+
+	if (!ob.isCamera) 		// keep in parent system!
+	    "$.parent = $" onm "\n"
+	end
+
+// Need special fun and games for far points
+
+	if (tk.isFar)
+	    "nctl = position_list()\n"
+	    "nctl.available.controller = $" camn ".pos.controller\n"
+	    "nctl.available.controller = $.pos.controller\n"
+	    "$.pos.controller = nctl\n"
+	end
+    end
+end
+// Parent everithing to controller function.
+
+function ParentAll()
+	"--parent almost everything to scene node--\n"
+	"for obj in rootnode.children do\n"
+	"(\n if obj.name !=\"" trackerPrefix "_SceneControlDummy\" then (\n"
+	"obj.parent = ShotDummy \n ) \n ) \n"	
+	"--done parenting--\n"
+end
+
+// Create layer to "put all your stuff in to" function.
+
+function createTrackingLayer()
+	"--create layer--\n"
+	"for i = 0 to layerManager.count-1 do\n"
+	"(\n"
+	"chkLayer = layerManager.getLayer i\n"
+	"chkName = chkLayer.name\n"
+	"if chkName == \"" trackerPrefix "_Camera\"\n"
+	"	then messageBox \"Attempt to create layer failed! Reason: Layer name already exists. Press OK to continue.\"\n"
+	"	else layerManager.newLayerFromName \"" trackerPrefix "_Camera\"\n"
+	"		TrackingLayer = layerManager.getLayerFromName \"" trackerPrefix "_Camera\"\n"
+	"		TrackingLayer.current = true\n"
+	")\n"
+	"--done creating layer--\n"
+end
+
+// Create Imageplane function.
+
+function createImagePlane(imgPlaneBGBool)
+	if (imgPlaneBGBool == 1)
+		"shotImagePlane = imagePlane lengthsegs:1 widthsegs:1 camera_node:$" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " isSelected:on\n"
+		"shotImgPlaneTex = bitmaptexture()\n shotImgPlaneTex.filename = \"" imgPlaneBG "\" \n"
+		"shotImgPlaneShader = standardmaterial name: \"" trackerPrefix "_" shot.start "to" shot.stop "\"  \n"
+		"shotImgPlaneShader.diffusemap = shotImgPlaneTex \n"
+		"shotImgPlaneShader.showInViewport = true\n"
+		"shotImagePlane.material = shotImgPlaneShader\n"
+	else
+		"imagePlane lengthsegs:1 widthsegs:1 camera_node:$" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " isSelected:on\n"
+	end
+end
+
+// Write camera variables in Max UserProp. Look for machine user name and store it.
+
+function CamVars()
+    "--write camera vars--\n"
+    "setUserProp $" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " " "\"renderWidth\" " "" shot.rawWidth "" "\n"
+    "setUserProp $" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " " "\"renderHeight\" " "" shot.rawHeight "" "\n"
+    "setUserProp $" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " " "\"apertureWidth\" " "" shot.backPlateWidth "" "\n"
+    "setUserProp $" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " " "\"imageAspect\" " "" shot.aspect "" "\n"
+    "setUserProp $" trackerPrefix "_" camnam "_" shot.start "to" shot.stop " " "\"createdBy\" execByUser \n"
+    "--end write camera vars--\n"
+end
+
+// Lock all transforms function.
+
+function lockAllTransforms()
+	"--lock transforms--\n"
+	"select $*\n"
+	"for obj in selection do (setTransformLockFlags obj #all)\n"
+	"clearSelection\n"
+	"--done locking transforms--\n"
+end
+
+// Build a light to correspond to SynthEyes lights.
+
+function OutLite(lite)
+
+    lightChange = DoesTransformChange(lite)
+    "set animate off\n"
+
+    if (lite.kind == "omni")
+	"omniLight name:\"" lite.nm "\""
+    else
+	"directionalLight name:\"" lite.nm "\""
+    end
+    " isSelected:on \n"
+
+    frame = firstFrame
+    "$.transform = matrix3" OutMatrix(lite.trans) "\n"
+
+    if (lightChange)
+	"$.showTrajectory = on\n"
+	"set animate on\n"
+	for (frame = firstFrame; frame <= lastFrame; frame++)
+	    "sliderTime = " frame+bias "f\n"
+	    "$.transform = matrix3" OutMatrix(lite.trans) "\n"
+	end
+	"set animate off\n"
+	"sliderTime = " firstFrame+bias "f\n"
+    end
+end
+
+// This is just a quick test at this.
+// Also probably need to modify transform, challenging at present.
+// Scaling may need adjustment
+// Custom (imported) meshes would require mesh access from Sizzle,
+// and a way to create the mesh in maxscript. Stay tuned.
+
+function OutMesh(mesh)
+
+    meshChange = DoesMeshTransformChange(mesh)
+
+    "set animate off\n"
+
+    frame = firstFrame
+    actkind = mesh.kind		// probably need to remap names
+    if (actkind == "TrackerMesh" || actkind == "Custom")
+	actkind = "Box"
+	end
+    if (actkind == "Guy")
+    "Box name:\"" trackerPrefix "_" mesh.nm "\""
+    else
+    actkind " name:\"" trackerPrefix "_" mesh.nm "\""
+    end
+
+    if (actkind == "Box")
+	" width:" mesh.sx " length:" mesh.sy " height:" mesh.sz 
+	elseif (actkind == "Guy")
+	" width:" 0.355*mesh.sx " length:" 0.138*mesh.sy " height:" mesh.sz 
+    elseif (actkind == "Plane")
+	" width:" mesh.sx " length:" mesh.sy " height:" mesh.sz 
+    elseif (actkind == "Pyramid")
+	" width:" mesh.sx " depth:" mesh.sy " height:" mesh.sz 
+    elseif (actkind == "Sphere")
+	" radius:" 0.5*mesh.sx 
+	printf(" pos:[%lg,%lg,%lg]",
+	    mesh.wtrans.px + mesh.sx*0.5*mesh.wtrans.cx,
+	    mesh.wtrans.py + mesh.sx*0.5*mesh.wtrans.cy,
+	    mesh.wtrans.pz + mesh.sx*0.5*mesh.wtrans.cz)
+    elseif (actkind == "Cylinder")
+	" radius:" 0.5*mesh.sx " height:" mesh.sz 
+    elseif (actkind == "Cone")
+	" radius1:" 0.5*mesh.sx " radius2:" 0 " height:" mesh.sz 
+    end
+
+    if (actkind != "Sphere")
+	" transform:(matrix3" OutMatrix(mesh.wtrans) ")"
+    end
+    " isSelected:on $.renderable = false\n"
+
+    if (meshChange)
+	"$.showTrajectory = on\n"
+	"set animate on\n"
+	for (frame = firstFrame; frame <= lastFrame; frame++)
+	    "sliderTime = " frame+bias "f\n"
+	    "$.transform = matrix3" OutMatrix(mesh.wtrans) "\n"
+	end
+	"set animate off\n"
+	"sliderTime = " firstFrame+bias "f\n"
+    end
+end
+
+// Support routines.
+
+function OutMatrix(mmat)
+    printf(" \\\n\t[%lf,%lf,%lf]\\\n\t[%lf,%lf,%lf]"
+	"\\\n\t[%lf,%lf,%lf]\\\n\t[%lf,%lf,%lf]",
+	mmat.ax, mmat.ay, mmat.az,
+	mmat.bx, mmat.by, mmat.bz,
+	mmat.cx, mmat.cy, mmat.cz,
+	mmat.px, mmat.py, mmat.pz)
+end
+
+// returns 2: rot changes, 1: pos changes, 0: both stationary (3:both chg)
+
+function DoesTransformChange(ob)
+    frame = firstFrame
+    tr0 = ob.trans
+    pos0 = ob.rowP
+    rv = 0;
+    for (frame = firstFrame+1; frame <= lastFrame; frame++)
+	tr = ob.trans
+	rv |= ((tr.rowP != pos0) ? 1 : 0)
+	rv |= ((tr != tr0) ? 2 : 0)
+    end
+    frame = firstFrame
+    return rv;
+end
+
+function DoesMeshTransformChange(ob)
+    frame = firstFrame
+    tr0 = ob.wtrans
+    pos0 = ob.rowP
+    rv = 0;
+    for (frame = firstFrame+1; frame <= lastFrame; frame++)
+	tr = ob.wtrans
+	rv |= ((tr.rowP != pos0) ? 1 : 0)
+	rv |= ((tr != tr0) ? 2 : 0)
+    end
+    frame = firstFrame
+    return rv;
+end
+
+
+// Check to see if the lens fov is fixed, indep of mode
+
+function IsLensFixed(cam)
+    frame = firstFrame
+    fov0 = cam.fov
+    for (frame = firstFrame+1; frame <= lastFrame; frame++)
+	if (cam.fov != fov0)
+	    return 0
+	end
+    end
+    frame = firstFrame
+    return 1
+end
+
+function fix_slashes(slname)
+    newname = ""
+    for (chno = 1; chno <= length(slname); chno++)
+	chr = substr(slname, chno, 1)
+	if (chr == "\\")
+	    chr = "\\\\"
+	end
+	newname = (newname chr)
+    end
+    return newname
+end

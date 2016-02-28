@@ -1,0 +1,845 @@
+//SIZZLEX .nk Nuke 5.1 Stereo
+@[
+// (c)2008 Andersson Technologies LLC
+// (c)2013 Adrian Costea oddworks@gmaail.com >> Added stereo camera
+// Written by Russell L. Andersson
+// Set viewer to 3D, click camera icon on viewer if using axes
+//	If switching back to top/left/etc, be sure to turn camera icon off!
+// WATCHOUT---doesn't seem to accept fractional frame rates
+//
+slate = 0			// set to 1 if first frame is slate
+bias = 1-slate			// starting frame bias
+renderTrackers = 1		// 1: rendering spheres; 0: Axis, with Card
+trackerSize = 0.002
+no_drive = 0			// set to 1 to remove C: etc drive name
+screenMult = 4			// screen is this many multiples of world size
+CRLF = "\n"
+if(1)
+    dlg = NewDialog("nuke5")
+    dlg.Check("wobj", "Export meshes as OBJs", 1)
+    dlg.Check("sclx", "Scale exported meshes", 1)
+    dlg.Check("slate", "First frame is slate", 0)
+    dlg.Check("renderTrackers", "Renderable Trackers", renderTrackers)
+    dlg.Check("forceInt", "Int-only fps", 1)
+    dlg.Check("no_drive", "No drive letter", no_drive)
+    dlg.Check("sticky", "Sticky note", 1)
+    dlg.Check("msg", "Message at end", 0)
+    dlg.Float("screenMult", "Relative Screen Distance", 0.1, screenMult, 10)
+    dlg.Float("trackerSize", "Relative tracker size", 0.0001, trackerSize, 0.01)
+    dlg.Show()
+    slate = dlg.slate
+    renderTrackers = dlg.renderTrackers
+    no_drive = dlg.no_drive
+    screenMult = dlg.screenMult
+    trackerSize = dlg.trackerSize
+end
+bias = 1 - slate
+
+
+axisMode = 1
+rotOrder = 0
+maincam = Scene.activeObj.cam
+mainshot = maincam.shot
+isstereo = 0
+
+NukeExport()
+
+function NukeExport()
+    if (mainshot.stereoType > 0)
+    isstereo = 1
+    	for (cam in mainshot.left.obj)
+    		Header()
+    		Object(cam)
+    		JoinCams()
+    	end
+    	for (cam in mainshot.right.obj)
+    		Object(cam)
+    	end
+    else
+    	Header()
+    	Object(cam)
+    	ObTrackers(cam)
+    end
+
+    for (ob in shot.obj)
+	if (ob != cam)
+	    Object(ob)
+	    ObTrackers(ob)
+	end
+    end
+
+// Automatically parents to appropriate object
+
+    for (msh in Mesh)
+	OutMesh(msh, "")
+    end
+    for (lite in Lite)
+	OutLite(lite)
+    end
+    WholeScene()
+    if (dlg.sticky)
+	StickyNote()
+    end
+    if (dlg.msg)
+	printf("message \"Loaded %d frames and %d points.\"\n", totfrm, totpnt)
+    end
+end
+
+function Header()
+    cam = Scene.activeObj.cam		// be sure to hit the camera
+    shot = cam.shot
+    startFrame = shot.start
+    stopFrame = shot.stop
+    hfa = shot.backPlateWidth
+    vfa = hfa / shot.aspect
+    pixasp = shot.aspect * shot.height / shot.width
+
+
+// Get the basename of the shot name. PC or Mac, w/w-o path, w/w-o .extn
+
+    shotName = shot.nm
+    len = length(shotName)
+    cnt = 1
+    for(I = 1; I <= len; I++)
+	chr = substr(shotName,I,1)
+	if(chr == "\\" || chr == "/")
+	    cnt = I+1
+	end
+    end
+    shotName = substr(shotName,cnt)
+    len = length(shotName)
+    cnt = len
+    for(I = 1; I <= len; I++)
+	chr = substr(shotName,I,1)
+	if(chr == ".")		// want LAST . -- may be several
+	    cnt = I-1
+	end
+    end
+    shotName = substr(shotName, 1, cnt)
+
+    totfrm = stopFrame - startFrame + 1
+    totpnt = 0 
+    "version 5.1200" CRLF
+    "Root {" CRLF
+    "\tinputs 0" CRLF
+    "\tname \"" Scene.exportFile "\"" CRLF
+    "\tfirst_frame " startFrame+bias CRLF
+    "\tlast_frame " stopFrame+bias CRLF
+    if (dlg.forceInt)		// warning--- no fractional????!!!
+	"\tfps " round(shot.rate) CRLF
+    else
+	"\tfps " shot.rate CRLF
+    end
+    ImgFormat(shot, "format")
+    ImgFormat(shot, "proxy_format")
+    if (isstereo != 0)
+    	"\tviews \"left #ff0000\n"
+		"right #00ff00\"\n"
+    end
+    "}" CRLF
+    scninp = 0		// #inputs to final scene, running
+end
+
+function Object(ob)
+    if (ob.isCamera)
+	"Camera2 {\n"
+	"\tinputs 0" CRLF
+//	"\ticon node_camera.xpm\n"
+	"\tselected true\n"
+    else
+	"Axis2 {\n"
+	"\tinputs 0" CRLF
+    end
+    rv = DoesTransformChange(ob)
+    if (rv & 1)
+	"\n\ttranslate {{y x" startFrame+bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		" " ob.px
+	    end
+	"} {y x" startFrame+bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		" " ob.py 
+	    end
+	"} {y x" startFrame+bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		" " ob.pz 
+	    end
+	"}}\n"
+    else
+	frame = startFrame
+	"\ttranslate {" ob.px " " ob.py " " ob.pz "}\n"
+    end
+    if (rv)
+	"\trotate {{y x" startFrame+bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		" " ob.rx
+	    end
+	"} {y x" startFrame+bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		" " ob.ry
+	    end
+	"} {y x" startFrame+bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		" " ob.rz
+	    end
+	"}}\n"
+    else
+	frame = startFrame
+	"\trotate { " ob.rx " " ob.ry " " ob.rz " }\n"
+    end
+    if (ob.isCamera)
+	"\tfocal {{y x" startFrame+bias
+	    if (IsLensFixed(ob))
+		frame = startFrame
+		" " ob.fl
+	    else
+		for (frame = startFrame; frame <= stopFrame; frame++)
+		    " " ob.fl
+		end
+	    end
+	"}}\n"
+	"\tvaperture " vfa "\n"
+	"\thaperture " hfa "\n"
+	"\tname \"" ob.nm "\"\n"
+	"\ticon node_camera.xpm\n"
+	"\tlabel \"" ob.distortion "\"\n"
+	"}\n"
+
+// Need two copies of the camera on the stack here --- one
+//	for the final renderer node, and the top one scene node
+	if (!renderTrackers)
+	    "set camnode [stack 0]\n"
+	end
+// Do NOT increment scninp for main camera --- goes to renderer, not scene
+    else
+	"\tname \"" ob.nm "\"\n"
+	"}\n"
+	scninp += 1
+    end
+end
+
+// Only gets called once for the camera to put the rest of the scene together
+
+function WholeScene()
+    if (renderTrackers)
+	"Scene {\n"
+	"    inputs " scninp "\n"		// count of inputs
+	"    name \"" cam.nm "Scene\"\n"
+	"    icon node_scene.xpm\n"
+	"}\n"
+	ImgReader()
+    else
+	"push $camnode\n"		// to the TransformGeo
+	ImgReader()
+
+// Create a card object to hold the image in the 3-D view. It is sized
+// based on distance from the camera. Scale must be animated for zoom cameras.
+
+	"Card2 {\n"
+	"  inputs 1\n"
+	"  image_aspect false\n"	
+	scndis = screenMult*cam.worldSize
+	"  name \"" cam.nm "Card\"\n"
+	"}\n"
+
+	"TransformGeo {\n"
+	" inputs 2\n"
+	" name \"" cam.nm "CardGeo\"\n"
+	"  translate {0 0 -" scndis "}\n" // relative camera host
+	"  scaling { 1 " 1.0 / cam.shot.aspect " 1 }\n"
+	if (IsLensFixed(cam))
+	    frame = startFrame
+	    scnsz = 2*scndis*tan(cam.fov*0.5)
+	    "  uniform_scale " scnsz "\n"
+	else
+	    "  uniform_scale {{y x" startFrame + bias
+	    for (frame = startFrame; frame <= stopFrame; frame++)
+		scnsz = 2*scndis*tan(cam.fov*0.5)
+		" " scnsz
+	    end
+	    "}}\n"
+	end
+	"}\n"
+
+	scninp += 1		// including the CardObj
+	"Scene {\n"
+	"    inputs " scninp "\n"
+	"    name \"" cam.nm "Scene\"\n"
+	"    icon node_scene.xpm\n"
+	"}\n"
+	"push 0\n"		// no image connection, using card
+    end
+    "ScanlineRender {\n"
+    "    inputs 3\n"
+    "    name \"" cam.nm "Render\"\n"
+//    "    filtering_enabled false\n"
+    "}\n"
+//    "input " cam.nm "Scene 0 $camnode\n"	// cam always on 0
+    "Viewer {" CRLF
+    "\tname \"" cam.nm "Viewer\"" CRLF
+    "}" CRLF
+end
+
+// Set up an image reader. It maps the initial frame number down to our
+// local starting frame (bias).
+// Mac supports QT movies, not sure for PC. AVIs unknown either way
+
+function ImgReader()
+"Read {" CRLF
+"\tinputs 0" CRLF
+"\tname \"" cam.nm "Reader\"" CRLF
+
+frame=startFrame 
+if (shot.imageName != "")
+    "\tfile \"" fix_fname(shot.imageName) "\"" CRLF
+else
+    "\tfile \"" simple_fix_fname(shot.nm) "\"" CRLF
+    startSeq = 1		// or else doesn't work...
+end
+
+"\t" ImgFormat(shot, "format") CRLF
+"\tframe \"frame-" bias "+" startSeq "\"" CRLF
+"\tfirst " startFrame + startSeq CRLF
+"\tlast " stopFrame + startSeq CRLF
+"\tpremultiplied false" CRLF
+"}" CRLF
+end
+
+// To see the contents of the group, double-click it, then click the S
+//	on the top line of its properties
+
+function ObTrackers(ob)
+    tksz = trackerSize * cam.worldSize
+    tcnt = NExpo(ob)
+    has_parent = (ob.isCamera ? 0 : 1)
+
+    if (!tcnt)
+	return		// do not create anything
+    end
+    if (!ob.isCamera)
+	"push " ob.nm "\n"
+    end
+    "Group {\n"
+    "  inputs " (ob.isCamera ? 0 : 1) "\n"
+    "  name \"" ob.nm "Trackers\"\n"
+//    "  addUserKnob { 20 \"\" User }\n"
+    if (renderTrackers)
+	"  addUserKnob { 7 tracker_size l \"Tracker Size\" t tracker_size R 0 5 }\n"
+	"  tracker_size " tksz "\n"
+    end
+    "}\n"
+    if (tcnt)
+	if (has_parent)
+	    "Input {\n"
+	    " inputs 0\n"		// none INSIDE the group
+	    "  name \"" ob.nm "AxisInput\"\n"
+	    "}\n"
+	end
+
+	if (renderTrackers)
+	    "Constant {\n"
+	    "  inputs 0\n"
+	    "  channels rgb\n"
+	    "  color {1 0 1 0}\n"
+	    "  name TrackerConstant\n"
+	    "}\n"
+	end
+    end
+
+// Rendered trackers are degenerate spheres; non-renderable are axes
+
+    tkno = 1
+    for (tk in ob.trk)
+	if (!tk.isExported)
+	    continue
+	end
+	if (renderTrackers)
+	    if (tkno > 1)		// already there for 1st one
+		if (has_parent)
+		    "push " ob.nm "AxisInput\n"
+		end
+		"push TrackerConstant\n"
+	    end
+	    "Sphere {\n"
+	    "  inputs 1\n"
+	    "  name \"" tk.nm "\"\n"
+	    "  rows 2\n"
+	    "  columns 4\n"
+	    TrkPath(tk, ob.isCamera)
+            "  uniform_scale {{tracker_size}}\n"
+	    "}\n"
+	    if (has_parent)
+		"TransformGeo {\n"
+		"  inputs 2\n"
+		"  name \"" tk.nm "Geo\"\n"
+		"}\n"
+	    end
+	else
+	    if (tkno > 1 && has_parent)
+		"push " ob.nm "AxisInput\n"
+	    end
+	    "Axis2 {\n"
+	    " inputs " (has_parent ? 1 : 0) "\n"
+	    TrkPath(tk, ob.isCamera)
+	    " icon node_axis.xpm\n"
+	    " name \"" tk.nm "\"\n"
+	    "}\n"
+	end
+//	"input " ob.nm "Combiner " tkno++  " " tk.nm "\n"
+	tkno += 1
+    end
+//    printf("input %sScene %d %sTrackers\n", cam.nm, scninp++, ob.nm)
+    totpnt += tcnt
+
+    "Scene {\n"
+    " inputs " tcnt "\n"
+    " name \"" ob.nm "Combiner\"\n"
+    "}\n"
+    "Output {\n"
+    " inputs 1\n"		// ie the Scene
+    " name \"" ob.nm "Output\"\n"
+    "}\n"
+    "end_group\n"
+    scninp += 1			// addt'l input to main Scene node
+end
+
+// Far points are driven in as animated keys. Could also be done 
+// 	with expressions on the camera position, with only one key.
+
+function TrkPath(tk, iscam)
+    if (!iscam)
+	frame = startFrame	// use object coordinates
+	" translate {" tk.ox " " tk.oy " " tk.oz "}\n"
+    elseif (MovingPnt(tk))	 // was: if (tk.isFar || tk.isSolved == 2)
+	" translate {{y x" startFrame+bias
+		for (frame = startFrame; frame <= stopFrame; frame++)
+		    " " tk.wx
+		end
+	    "} {y x" startFrame+bias
+		for (frame = startFrame; frame <= stopFrame; frame++)
+		    " " tk.wy 
+		end
+	    "} {y x" startFrame+bias
+		for (frame = startFrame; frame <= stopFrame; frame++)
+		    " " tk.wz 
+		end
+	    "}}\n"
+    else
+	frame = startFrame
+	" translate {" tk.wx " " tk.wy " " tk.wz "}\n"
+    end
+end
+
+// Create some simple objects. Box, Plane, Sphere supported. Everything
+//	else changed to a box. Can be parented to an object, if so,
+//	parented in nuke to.
+
+
+function OutMesh(mesh, owner)
+    frame = startFrame
+    actkind = mesh.kind		// probably need to remap names
+
+
+    has_par = (typeof(mesh.obj) != "Double" ? 1 : 0)
+    if (has_par)
+	"push \"" mesh.obj.nm "\"\n"
+    end
+
+    meshnm = mesh.nm
+    if (mesh.file != "")
+	meshnm = NoExtn(meshnm)
+    end
+
+    col = mesh.color
+    "Constant {\n"
+    " inputs 0\n"
+    "  channels rgb\n"
+    "  color { " ((col>>0)&255)/255.0  " " ((col>>8)&255)/255.0 
+	    " " ((col>>16)&255)/255.0 " 1}\n"
+    "  name \"" meshnm "Color\"\n"
+    "}\n"
+    "push 0\n"
+    "Phong {\n"
+    "  inputs 2\n"
+    "  name \"" meshnm "Phong\"\n"
+    "}\n"
+
+    dy = 0
+    nomx = 1
+    nomz = 1
+    esx = abs(mesh.sx)
+    esy = abs(mesh.sy)
+    esz = abs(mesh.sz)
+    effr = mesh.trans
+    if (actkind == "Plane")
+	"Card2 {\n"		// parented to axis
+	"  inputs 1\n"
+//BUGGY:	"  orientation ZX\n"
+	effr = RotX(-90) * mesh.trans
+	"  image_aspect false\n"
+	"  name \"" meshnm "\"\n"
+    elseif (actkind == "Sphere")
+	"Sphere {\n"		// parented to axis
+	"  inputs 1\n"
+	"  radius 0.5\n"
+	"  name \"" meshnm "\"\n"
+	dy = 0.5 * mesh.sy
+    elseif (actkind == "Cylinder")
+	"Cylinder {\n"		// parented to axis
+	"  inputs 1\n"
+	"  radius 0.5\n"
+	"  height 1\n"
+	"  name \"" meshnm "\"\n"
+	dy = 0.5 * esy
+    elseif (mesh.file != "")
+	"ReadGeo2 {\n"
+	"  inputs 1\n"
+	"  file \"" mesh.file "\"\n"
+	"  name \"" meshnm "\"\n"
+    elseif (actkind != "Box" && dlg.wobj)	// optionally write to disk!
+	mfnm = BlastMesh(mesh)
+    	"ReadGeo2 {\n"
+	"  inputs 1\n"
+	"  file \"" simple_fix_fname(mfnm) "\"\n"
+	"  name \"" meshnm "\"\n"
+	if (dlg.sclx)
+	    esx = 1
+	    esy = 1
+	    esz = 1
+	end
+    else	// box, cone, earthling, etc
+	"Cube {\n"		// parented to axis
+	"  inputs 1\n"
+	"  name \"" meshnm "\"\n"
+	dy = 0.5 * mesh.sy
+    end
+    "  translate {" mesh.x " " mesh.y+dy " " mesh.z "}\n" // rel. host, else wld
+    "  rotate { " effr.rx " " effr.ry " " effr.rz " }\n"
+    "  scaling { " esx " " esy  " " esz " }\n"
+    "}\n"
+
+    if (has_par)
+	"TransformGeo {\n"
+	"  inputs 2\n"
+	"  name \"" meshnm "Geo\"\n"
+	"}\n"
+    end
+
+    if (owner == "")
+	scninp += 1
+    end
+end
+
+// Nuke lites are omnidirectional, but drive out orientation anyway.
+
+function OutLite(lite)
+// Light should be looking along -Z, but due to debatable omission, the
+//	-Z look direction is getting remapped also. (IS_CAM in synwrap)
+
+    modlite = RotX(-90) * lite.trans
+
+    "Light2 {\n"
+    if (lite.kind == "directional")		// omni point by default
+	"  light_type directional\n"
+    end
+    "  inputs 0\n"
+    "  name \"" lite.nm "\"\n"
+    "  translate { " lite.x " " lite.y " " lite.z " }\n"
+    "  rotate { " modlite.rx " " modlite.ry " " modlite.rz " }\n"
+    "}\n"
+    scninp += 1
+end
+
+
+// Check to see if the lens fov is fixed, indep of mode
+
+function IsLensFixed(cam)
+    frame = startFrame
+    fov0 = cam.fov 
+    for (frame = startFrame+1; frame <= stopFrame; frame++)
+	if (cam.fov != fov0)
+	    return 0
+	end
+    end
+    return 1
+end
+
+
+// returns 2: rot changes, 1: pos changes, 0: both stationary (3:both chg)
+
+function DoesTransformChange(ob)
+    frame = startFrame
+    tr0 = ob.trans
+    pos0 = ob.rowP
+    rv = 0;
+    for (frame = startFrame+1; frame <= stopFrame; frame++)
+	tr = ob.trans
+	rv |= ((tr.rowP != pos0) ? 1 : 0)
+	rv |= ((tr != tr0) ? 2 : 0)
+    end
+    return rv;
+end
+
+function DoesMeshTransformChange(lob)
+    frame = startFrame
+    tr0 = lob.wtrans
+    pos0 = lob.rowP
+    rv = 0;
+    for (frame = startFrame+1; frame <= stopFrame; frame++)
+	tr = lob.wtrans
+	rv |= ((tr.rowP != pos0) ? 1 : 0)
+	rv |= ((tr != tr0) ? 2 : 0)
+    end
+    return rv;
+end
+
+function MovingPnt(pt)
+    frame = startFrame
+    pos0 = pt.wvec
+    rv = 0;
+    for (frame = startFrame+1; frame <= stopFrame; frame++)
+	pos1 = pt.wvec
+	if (pos0 != pos1)
+	    rv |= 1
+	end
+    end
+    return rv;
+end
+
+// Change back slashes to forwards slashes in the first image file name.
+// Change the frame number to a unix format spec.
+// Also saves the frame number of this first frame
+
+function fix_fname(slname)
+    newname = ""
+    for (chno = 1; chno <= length(slname); chno++)
+	chr = substr(slname, chno, 1)
+	if (chr == "\\")
+	    chr = "/"
+	end
+	if (no_drive && chr == ":")
+	    newname = ""
+	    chr = ""
+	end
+	newname = (newname chr)
+    end
+    slname = newname
+
+// Encode numeric frame number into a format. Locate rightmost run of digits
+
+    for (ch1 = length(slname); ch1 >= 1; ch1--)
+	chr = substr(slname, ch1, 1)
+	if (chr >= "0" && chr <= "9")
+	    break
+	end
+    end
+    if (ch1 == 0)
+	return slname
+    end
+    for (ch0 = ch1; ch0 >= 1; ch0--)
+	chr = substr(slname, ch0, 1)
+	if (chr < "0" || chr > "9")
+	    break
+	end
+    end
+
+// Get first frame number
+
+    startSeq = substr(slname, ch0+1, ch1-ch0) + 0
+
+// Extends from (ch0,ch1]
+
+    newname = substr(slname, 1, ch0)
+    if (substr(slname, ch0+1, 1) == "0")
+	newname = (newname "%0" ch1-ch0 "d")
+    else
+	newname = (newname "%" ch1-ch0 "d")
+    end
+    newname = (newname substr(slname, ch1+1))
+    return newname
+end
+
+
+function simple_fix_fname(slname)
+    newname = ""
+    for (chno = 1; chno <= length(slname); chno++)
+	chr = substr(slname, chno, 1)
+	if (chr == "\\")
+	    chr = "/"
+	end
+	if (no_drive && chr == ":")
+	    newname = ""
+	    chr = ""
+	end
+	newname = (newname chr)
+    end
+    return newname
+end
+
+
+
+function NExpo(ob)
+    expcnt = 0
+    for (tk in ob.trk)
+	if (tk.isExported)
+	    expcnt += 1
+	end
+    end
+    return expcnt
+end
+
+function ImgFormat(sht, ity)
+    "\t" ity " \""
+    sht.width " " sht.height " 0 0 " sht.width " " sht.height " " sht.pixasp 
+    " \"" CRLF
+end
+
+
+function NoExtn(longnm)
+    last = rindex(longnm, ".")
+    if (last > 0)
+	longnm = substr(longnm, 1, last-1)
+    end
+    return longnm
+end
+
+
+
+// Create an OBJ file for this mesh, with a unique file name
+
+function BlastMesh(msh)
+
+// Break the export file down into a directory and basename, dump extension
+
+    dir = ""
+    basename = Scene.exportFile
+    while ( (idx = index(basename, "\\")) > 0 
+	    || (idx = index(basename, "/")) > 0)
+	sep = substr(basename, idx, 1)
+	dir = (dir substr(basename, 1, idx-1) sep)
+	basename = substr(basename, idx+1)
+    end
+    if ( (idx = rindex(basename, ".")) > 0)
+	basename = substr(basename, 1, idx-1)
+    end
+
+// Assemble a basename and mesh file name for this mesh.
+
+    basename = (basename "_" NM(msh.nm) ".obj")
+    objnm = (dir basename)
+
+// Here goes the file
+
+    openout(objnm)
+    MeshOut(msh)
+    closeout()
+    return objnm
+end
+
+
+// removes spaces and anything else problematic from names
+
+function NM(orinm)
+    newname = ""
+    for (chno = 1; chno <= length(orinm); chno++)
+	chr = substr(orinm, chno, 1)
+	if (chr != " " && chr != ".")
+	    newname = (newname chr)
+	end
+    end
+    return newname
+end
+
+
+// From the mshobj.szl exporter
+
+function MeshOut(msh)		// make sure the same number of each are output
+    "o " msh.nm "\n"
+    nv = #(msh.vtx)
+    nf = #(msh.face)
+    if (dlg.sclx)
+	scl = msh.svec
+    else
+	scl = Vector(1,1,1)
+    end
+
+    for (v = 1; v <= nv; v++)
+	printf("v %.6f %.6f %.6f\n", 
+	    scl.x*msh.vtx[v].x, scl.y*msh.vtx[v].y, scl.z*msh.vtx[v].z)
+    end
+    if (msh.hasTexCos)
+	for (v = 1; v <= nv; v++)
+	    printf("vt %lg %lg\n", msh.texco[v].u, msh.texco[v].v)
+	end
+    end
+    if (msh.hasNormals)
+	for (v = 1; v <= nv; v++)
+	    nrm = msh.norm[v]
+	    nrm.x *= scl.y*scl.z
+	    nrm.y *= scl.x*scl.z
+	    nrm.z *= scl.x*scl.y
+	    nrm = nrm.norm
+	    printf("vn %lg %lg %lg\n", nrm.x, nrm.y, nrm.z)
+	end
+    else
+	for (f = 1; f <= nf; f++)
+	    face = msh.face[f]
+	    v0 = msh.vtx[face.vA]
+	    v1 = msh.vtx[face.vB]
+	    v2 = msh.vtx[face.vC]
+	    nrm = v1-v0
+	    nrm = nrm.Cross(v2-v0)
+	    nrm.x *= scl.y*scl.z
+	    nrm.y *= scl.x*scl.z
+	    nrm.z *= scl.x*scl.y
+	    nrm = nrm.norm
+	    printf("vn %lg %lg %lg\n", nrm.x, nrm.y, nrm.z)
+	end
+    end
+
+    for (f = 1; f <= nf; f++)	// f can be accessed by Slash
+	face = msh.face[f]
+	printf("f %s %s %s\n", 
+	    Slash(msh, face.vA), Slash(msh, face.vB), Slash(msh, face.vC));
+    end
+end
+
+
+function Slash(msh, vn)
+    vns = printf("%d", vn)
+    res = (vns "/")
+    if (msh.hasTexCos)
+	res = (res vns)
+    end
+    res = (res "/")
+    if (msh.hasNormals)
+	res = (res vns)
+    else
+	res = (res printf("%d", f))
+    end
+    return res;
+end
+
+
+// Final stickynote
+
+function StickyNote()
+    "StickyNote {\n"
+    "  inputs 0\n"
+    "  name \"SceneInfoSticky\"\n"
+    "  label \""
+	"Source: " Scene.sourceFile "\\n"		// must embed a \n
+	DateTime("Created: %a, %b %d, %Y %I:%M:%S %p")	// no final \n
+    "\"\n"	// end of the label argument line
+    "}\n"
+end
+
+// Join camera pair with a JoinViews node
+
+function JoinCams()
+	"JoinViews {\n"
+	"inputs 2\n"
+	"name FuseCams\n"
+	"viewassoc \"left\nright\"\n"
+	"}\n"
+end

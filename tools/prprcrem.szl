@@ -1,0 +1,95 @@
+//SIZZLET PreprocRemote
+// PreprocRemote v0.2
+// (c)2013 Adrian Costea www.oddworks.ro
+// email: oddworks@gmail.com
+
+keyfrm = 0
+obj = Scene.activeObj
+maincam = Scene.activeObj.cam
+mainshot = maincam.shot
+shot = obj.shot
+shotL = shot.left
+shotR = shot.right
+prep = shot.live
+prepL = shot.left.live
+prepR = shot.right.live
+dlg = NewDialog("PreProcRemote")
+dlg.Button("GetSetts", "Shot settings", "Get")
+dlg.Choice("downBox", "Downscale by", 1)
+    dlg.AddChoice("downBox", "1")
+    dlg.AddChoice("downBox", 2)
+    dlg.AddChoice("downBox", 4)
+dlg.Float("blur", "Blur", 0, 0, 500)
+dlg.Float("hipass", "Hipass", 0, 0, 500)
+dlg.Float("hi", "High", 0, 1, 1)
+dlg.Float("med", "Med", 0, 0.5, 1)
+dlg.Float("lo", "Low", 0, 0, 1)
+dlg.Button("ApplyPrep", "Apply settings", "Apply")
+dlg.Button("ResetPrep", "Image prep.", "Reset")
+myvec = prep.levels
+obj = Scene.activeObj
+//Scene.SetFrame(currfrm)
+
+dlg.Detach()
+
+
+// Get preproc settings into dialog
+function GetSetts()
+   dlg.downBox = prep.subsample
+   dlg.blur = prep.blur
+   dlg.hipass = prep.hipass
+   dlg.lo = prep.levels.x
+   dlg.med = prep.levels.y
+   dlg.hi = prep.levels.z
+end
+
+// Apply dialog setting to preprocessor
+
+function SetPrep(prep)
+    Scene.SetFrame(keyfrm)
+    prep.levelsKeyed = -1
+    prep.subsample = dlg.downBox
+    prep.blur = dlg.blur
+    prep.hipass = dlg.hipass
+    myvec.x = dlg.lo
+    myvec.y = dlg.med
+    myvec.z = dlg.hi  
+    prep.levels = myvec
+
+end
+
+// Do checks and apply settings
+
+function ApplyPrep()
+    if (mainshot.stereoType > 0)
+        prep = prepL
+        SetPrep(prep)
+        shotL.Flush()
+        shotL.Validate()
+        prep = prepR
+        SetPrep(prep)
+        shotL.Flush()
+        shotR.Validate()
+    else
+        prep = prep
+        SetPrep(prep)
+        shot.Flush()
+        shot.Validate()
+    end
+end
+
+// Reset preprocessor
+
+function ResetPrep()
+    if (mainshot.stereoType > 0)
+        shotL.ResetPreset()
+        shotR.ResetPreset()
+        shotL.Validate()
+        shotR.Validate()
+    else
+        shot.ResetPreset()
+        shot.Validate()
+    end
+    //Message ("Image prep reseted.")
+    //obj = Scene.activeObj
+end

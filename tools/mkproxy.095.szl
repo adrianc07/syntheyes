@@ -1,0 +1,83 @@
+//SIZZLET Proxy maker9
+// Proxy Maker v0.95
+// (c)2012 Adrian Costea www.oddworks.ro
+// email: oddworks@gmail.com
+
+obj = Scene.activeObj
+currobj = Scene.activeObj
+shot = obj.shot
+prep = shot.live
+cam = Scene.activeObj.cam
+
+dlg = NewDialog("proxymaker09")
+//dlg.Button("GetAttr", "Atribute test", "GetAttr")
+//dlg.Path("proxyAttr", "Attr string")
+dlg.Button("GetSetts", "Scene settings", "Get")
+dlg.Choice("downBox", "Downscale by", 2)
+    dlg.AddChoice("downBox", "1")
+    dlg.AddChoice("downBox", 2)
+    dlg.AddChoice("downBox", 4)
+dlg.Button("SetPrep", "Downscale", "Apply")
+dlg.SaveFile("outPath", "Render path", "jpg")
+dlg.Button("PrepRender", "Render proxy", "Render")
+dlg.Button("ResetPrep", "Image prep.", "Reset")
+
+if (isNull(Obj.DefAttr("proxyPath")))
+        Obj.AddAttr("proxyPath", "unknown")
+        cam.proxyPath = "unknown"
+end
+
+dlg.Detach()
+
+
+// Test function. Attribute test
+//function GetAttr()
+//    if (isNull(Obj.DefAttr("proxyPath")))
+//       Obj.AddAttr("proxyPath", "unknown")
+//        cam.proxyPath = "unknown"
+//        dlg.proxyAttr = cam.proxyPath
+//    else
+//        dlg.proxyAttr = cam.proxyPath
+//    end
+//end
+
+// Get shot file path (if existent) and downrez var of image preprocessor
+function GetSetts()
+Scene.activeObj = currobj
+    if (isNull(cam.proxyPath) == 1 || cam.proxyPath == "unknown" )
+        Message ("No previously stored proxy path. Using default.")
+        dlg.outPath = shot.nm
+    else
+        dlg.outPath = cam.proxyPath
+    end
+    dlg.downBox = prep.subsample
+    
+end
+
+// Apply dialog setting to preprocessor
+function SetPrep()
+    prep.subsample = dlg.downBox
+	shot.Flush()
+    Message ("ImagePrep set.")
+ end
+
+// Execute preprocessor render and store render path as an attribute
+function PrepRender()
+    shot.renderFile = dlg.outPath
+    cam.proxyPath = dlg.outPath
+    Message ("Path set. Executing render.")
+    //shot.Render()
+    if (shot.Render() == 1)
+        Message ("Render done!")
+    else
+        Message ("Render aborted.")
+    end
+end
+
+// Reset preprocessor
+function ResetPrep()
+    prep.subsample = 1
+    shot.Validate()
+    shot.Flush()
+    Message ("Image prep reseted.")
+end
