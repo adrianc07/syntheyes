@@ -1,7 +1,7 @@
 //SIZZLEX .nk Nuke 5.1 Stereo
 @[
 // (c)2008 Andersson Technologies LLC
-// (c)2013 Adrian Costea oddworks@gmaail.com >> Added stereo camera
+// (c)2013 Adrian Costea oddworks@gmail.com >> Added stereo camera support.
 // Written by Russell L. Andersson
 // Set viewer to 3D, click camera icon on viewer if using axes
 //	If switching back to top/left/etc, be sure to turn camera icon off!
@@ -200,7 +200,7 @@ function Object(ob)
 	"}}\n"
 	"\tvaperture " vfa "\n"
 	"\thaperture " hfa "\n"
-	"\tname \"" ob.nm "\"\n"
+	"\tname \"" cam.nm "\"\n"
 	"\ticon node_camera.xpm\n"
 	"\tlabel \"" ob.distortion "\"\n"
 	"}\n"
@@ -515,7 +515,7 @@ function OutMesh(mesh, owner)
     end
     "  translate {" mesh.x " " mesh.y+dy " " mesh.z "}\n" // rel. host, else wld
     "  rotate { " effr.rx " " effr.ry " " effr.rz " }\n"
-    "  scaling { " esx " " esy  " " esz " }\n"
+    "  scaling { " esx " " esz  " " esy " }\n"
     "}\n"
 
     if (has_par)
