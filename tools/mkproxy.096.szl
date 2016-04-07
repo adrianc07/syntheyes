@@ -1,0 +1,97 @@
+//SIZZLET Proxy maker96
+// Proxy Maker v0.96
+// (c)2016 Adrian Costea www.oddworks.ro
+// email: oddworks@gmail.com
+
+obj = Scene.activeObj
+currobj = Scene.activeObj
+shot = obj.shot
+prep = shot.live
+cam = Scene.activeObj.cam
+dlgExt = "jpg"
+
+dlg = NewDialog("proxymaker096")
+dlg.Button("GetAttr", "Atribute test", "GetAttr")
+dlg.Path("proxyAttr", "Attr string")
+dlg.Button("GetSetts", "Scene settings", "Get")
+dlg.Choice("downBox", "Downscale by", 2)
+    dlg.AddChoice("downBox", "1")
+    dlg.AddChoice("downBox", 2)
+    dlg.AddChoice("downBox", 4)
+dlg.Choice("downBoxExt", "File type", dlgExt)
+    dlg.AddChoice("downBoxExt", "jpg")
+    dlg.AddChoice("downBoxExt", "tga")
+dlg.SaveFile("outPath", "Render path", dlg.downBoxExt)
+dlg.Button("SetPrep", "Downscale", "Apply")
+dlg.Button("PrepRender", "Render proxy", "Render")
+dlg.Button("ResetPrep", "Image prep.", "Reset")
+
+if (isNull(Obj.DefAttr("proxyPath")))
+        Obj.AddAttr("proxyPath", "unknown")
+        cam.proxyPath = "unknown"
+end
+
+dlg.Detach()
+
+
+// Test function. Attribute test
+function GetAttr()
+    //if (isNull(Obj.DefAttr("proxyPath")))
+    //   Obj.AddAttr("proxyPath", "unknown")
+    //    cam.proxyPath = "unknown"
+    //    dlg.proxyAttr = cam.proxyPath
+    //else
+    //    dlg.proxyAttr = cam.proxyPath
+    //end
+    //dlg.proxyAttr = shot.renderCompression
+    dlg.proxyAttr = shot.renderCompression
+end
+
+// Get shot file path (if existent) and downrez vars of image preprocessor
+function GetSetts()
+Scene.activeObj = currobj
+    if (isNull(cam.proxyPath) == 1 || cam.proxyPath == "unknown" )
+        Message ("No previously stored proxy path. Using default.")
+        dlg.outPath = shot.nm
+    else
+        dlg.outPath = cam.proxyPath
+    end
+    dlg.downBox = prep.subsample
+    
+end
+
+// Apply dialog setting to preprocessor
+function SetPrep()
+    cam.proxyPath = dlg.outPath
+    prep.subsample = dlg.downBox
+    // Sets RGBA prep output
+    shot.renderSettings = "imp: 1,1"
+    if (dlg.downBoxExt == "jpg")
+        shot.renderCompression = "jpg: 85"
+    else
+        shot.renderCompression = "tga: 1"
+    end
+	shot.Flush()
+    Message ("ImagePrep set.")
+ end
+
+// Execute preprocessor render and store render path as an attribute
+function PrepRender()
+    shot.renderFile = dlg.outPath
+    cam.proxyPath = dlg.outPath
+    Message ("Path set. Executing render.")
+    //shot.Render()
+    if (shot.Render() == 1)
+        Message ("Render done!")
+    else
+        Message ("Render aborted.")
+    end
+end
+
+// Reset preprocessor
+function ResetPrep()
+    prep.subsample = 1
+    shot.Validate()
+    shot.Flush()
+    Message ("Image prep reset.")
+end
