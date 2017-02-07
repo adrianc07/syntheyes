@@ -1,0 +1,3 @@
+//SIZZLET Cache Validate
+shot = Scene.activeObj.shot
+shot.Validate()
