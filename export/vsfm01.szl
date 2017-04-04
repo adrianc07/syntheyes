@@ -1,0 +1,68 @@
+//SIZZLEX .nvm Visual sfm NVM
+@[
+
+//Creditss
+
+
+
+currobj = Scene.activeObj
+cam = Scene.activeObj.cam
+trackerSize = 0.001	// relative to world size
+bias = Scene.startFrame	// frame bias: starting max frame # (frame 0 in SE)
+
+if(1)
+    dlg = NewDialog("VisualSFM export options")
+    dlg.Check("bias", "Starting at Frame 1", bias)
+    dlg.String("trackerPrefix", "Camera and trackers prefix", "prefix")
+	dlg.Check("imgPlane", "Create ImagePlane", 1)
+	dlg.String("imgdist", "at distance in " Scene.exportUnits "", 500)
+	dlg.Check("imgPlaneBGBool", "Use map for ImagePlane", 0)
+	dlg.OpenFile("imgPlaneBG", "ImagePlane Map", "ifl")
+	dlg.Check("layers", "Create layer", 1)
+	dlg.Check("lockTrans", "Lock Transforms", 1)    
+    dlg.Check("bak", "Set background img seq. ", 0)
+    dlg.Float("trackerSize", "Relative tracker size", 0.0001, trackerSize, 0.01)
+    dlg.String("obcol", "set color (R G B)", "8 8 136")
+    dlg.Button(messq,"description", "test")
+    dlg.Show()
+
+    storedproxy = dlg.storedproxy
+    MaxVersion = (dlg.max_6 ? 6 : 5);
+    bias = dlg.bias
+    trackerSize = dlg.trackerSize
+    trackerPrefix = dlg.trackerPrefix
+    imgPlane = dlg.imgPlane
+	imgPlaneBGBool = dlg.imgPlaneBGBool
+	imgPlaneBG = dlg.imgPlaneBG
+    layers = dlg.layers
+    lockTrans = dlg.lockTrans
+    bkg = dlg.bak
+    imgplDist = dlg.imgdist
+    obcolor = dlg.obcol
+end
+
+maincam = Scene.activeObj.cam
+mainshot = maincam.shot
+
+
+// Functions
+
+function rot2quat(crx,cry,crz)
+    c1 = cos(crx/2)
+    c2 = cos(cry/2)
+    c3 = cos(crz/2)
+    s1 = sin(crx/2)
+    s2 = sin(cry/2)
+    s3 = sin(crz/2)
+
+    w = c1 c2 c3 - s1 s2 s3
+    x = s1 s2 c3 +c1 c2 s3
+    y = s1 c2 c3 + c1 s2 s3
+    z = c1 s2 c3 - s1 c2 s3
+end
+
+function messq()
+	Message(
+rot2Quat (qss)
+	)
+end

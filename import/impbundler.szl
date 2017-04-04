@@ -1,0 +1,140 @@
+//SIZZLEI .out Bundler Camera
+
+// Notes
+// Author: Adrian Costea
+// (c)2017
+
+obj = Scene.activeObj
+shot = Scene.activeObj.cam.shot
+meshname = "BundlerPoints"
+msh = new Mesh
+msh.nm = meshname
+msh.kind = "Lidar"
+
+dlg = NewDialog("bundlerin")
+//dlg.Int("start", "First Frame", 0,  shot.start, 10000)
+//dlg.Int("stop", "Last Frame", 0, shot.stop, 10000)
+//dlg.Int("offset", "Frame Offset", -10000, 0, 10000)
+dlg.Float("wscl", "World Scaling", 0, 1.0, 1000000)
+dlg.StartRadio("axisMode", "Input Axis Mode")
+dlg.Radio("zup", "Z Up", axisMode == 0)
+dlg.Radio("yupr", "Y Up, Right Bundler Native", axisMode == 1)
+dlg.Radio("yupl", "Y Up, Left", axisMode == 2)
+//dlg.StartRadio("rotOrder", "Rotation Order")
+//dlg.Radio("xyz", "XYZ", rotOrder == 1)
+//dlg.Radio("zxy", "ZXY", rotOrder == 0)
+//dlg.StartRadio("fovchan", "Zoom Channel")
+//dlg.Radio("none", "None", !obj.isCamera)
+//dlg.Radio("fov", "Field of View", obj.isCamera)
+//dlg.Radio("vfov", "Vertical FOV", 0)
+//dlg.Radio("fl", "Focal Length", 0)
+//dlg.Check("flipZ", "Look the other way", 0)
+dlg.Show()
+
+wscl = dlg.wscl
+if (dlg.yupl)
+    axisMode = 2
+elseif (dlg.yupr)
+    axisMode = 1
+else
+    axisMode = 0
+end
+//rotOrder = dlg.xyz
+
+
+currln = -2
+currfrm = 0
+vcnt = 1
+ptx = 0
+pty = 0
+ptz = 0
+Scene.recalcSplines = 0
+
+// Vertex mesh func
+function BuildMsh(v1, v2, v3, c1, c2, c3, tp)
+    if (tp == "vert")
+        new msh.vtx
+        msh.vtx[vcnt]=Vector(v1, v2, v3)
+        msh.vtx.Update()
+    end
+    if (tp == "colr")
+        new msh.vtxColor
+        msh.vtxColor[vcnt]=(255 << 32) + (c3 << 16) + (c2 << 8) + (c1)
+        msh.vtx.Update()
+    end
+end
+
+
+//xforms
+xf = RotZ(0) * RotX(0) * RotY(0)
+xf.rowA = Vector(0, 0, 0)
+xf.rowB = Vector(0, 0, 0)
+xf.rowC = Vector(0, 0, 0)
+xf.rowP = Vector(0, 0, 0)
+t = RotZ(0) * RotX(0) * RotY(0)
+t.rowP = Vector(0, 0, 0)
+
+//file
+while ( (ln = getline()) != "") 
+    mod = currln % 5
+    mshmod = currln % 3
+    if (mod == 0)
+        nc = sscanf(ln, "%f%f%f", cfl, ck1, ck2)
+        //Message("Focal "cfl " " ck1 " " ck2)
+    elseif (mod == 1)
+        nc = sscanf(ln, "%g%g%g", fax, fay, faz)
+        //Message("RotA "fax","fay","faz)
+        xf.rowA = Vector(fax, fay, faz)
+    elseif (mod == 2)
+        nc = sscanf(ln, "%g%g%g", fbx, fby, fbz)
+        //Message("RotB "fbx"," fby","fbz)
+        xf.rowB = Vector(fbx, fby, fbz)
+    elseif (mod == 3)
+        nc = sscanf(ln, "%g%g%g", fcx, fcy, fcz)
+        //Message("RotC "fcx "," fcy "," fcz)
+        xf.rowC = Vector(fcx, fcy, fcz)
+    elseif (mod == 4)
+        nc = sscanf(ln, "%g%g%g", fpx, fpy, fpz)
+        //xf.rowP = Vector(fpx*wscl, fpy*wscl, fpz*wscl)
+        t.rowP = Vector(fpx*-1*wscl, fpy*-1*wscl, fpz*-1*wscl)
+    elseif (mod == -1)
+        nc = sscanf(ln, "%d%d", incams, inpts)
+        //Message(incams " cameras and " inpts " points")
+    elseif (mod == -2)
+        nc = sscanf(ln, "%s", fileheader)
+    end
+    
+    if (mshmod == 2 && currfrm >= incams)
+        nc = sscanf(ln, "%g%g%g", ptx, pty, ptz)
+        //Message("My pos "ptx" "pty" "ptz)
+    elseif (mshmod == 0 && currfrm >= incams)
+        nc = sscanf(ln, "%g%g%g", ptr, ptg, ptb)
+        //Message("My color "ptr" "ptg" "ptb)
+    end
+    currln++
+  
+    if (mod == 4 && currfrm < incams)  // Do transforms and make cams
+        frame = currfrm
+        obj.fl = (cfl / shot.width) * shot.backPlateWidth
+        wdpos = ((xf.inv * t) * xf)
+        xf.rowP = wdpos.rowP
+        obj.trans = xf * Mangle(axisMode)
+        currfrm++
+    end
+
+    if (mshmod == 1 && currfrm >= incams)
+        //Message("Atempting points")
+        BuildMsh(ptx, pty, ptz, ptr, ptg, ptb, "vert")
+        BuildMsh(ptx, pty, ptz, ptr, ptg, ptb, "colr")
+        vcnt++
+    end
+end
+
+
+Scene.recalcSplines = 1
+msh.showVertices = 1
+msh.trans = Mangle(axisMode)
+obj.RecalcSeedPath()
+obj.RecalcSolvePath()
+obj.RecalcSeedFOV()
+obj.RecalcSolveFOV()
